@@ -1,0 +1,19 @@
+{
+  "name": "kp-generator",
+  "version": "1.0.0",
+  "description": "Генератор коммерческих предложений (КП) с подписанными ссылками и уведомлением в Telegram. Без базы данных.",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js",
+    "dev": "node api/index.js",
+    "gen-secret": "node -e \"console.log(require('crypto').randomBytes(48).toString('hex'))\""
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
