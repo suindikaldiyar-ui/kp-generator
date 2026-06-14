@@ -144,24 +144,31 @@ app.post('/api/accept', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Срок действия предложения истёк' });
     }
 
-    // Считаем сумму для сообщения
-    const totalKzt = data.s.reduce((sum, s) => sum + s.p, 0);
-    let rubLine = '';
-    if (data.sr && config.showRub) {
-      const rate = await currency.getRate();
-      const totalRub = Math.round(currency.kztToRub(totalKzt, rate));
-      rubLine = `\n💱 ≈ <b>${totalRub.toLocaleString('ru-RU')} ₽</b>`;
+    // Принятие зафиксировано. Уведомление в Telegram НЕ критично:
+    // любые его ошибки (включая timeout) только логируем — клиент всегда
+    // получает {ok:true}, чтобы страница показала «Условия приняты».
+    try {
+      const totalKzt = data.s.reduce((sum, s) => sum + s.p, 0);
+      let rubLine = '';
+      if (data.sr && config.showRub) {
+        const rate = await currency.getRate();
+        const totalRub = Math.round(currency.kztToRub(totalKzt, rate));
+        rubLine = `\n💱 ≈ <b>${totalRub.toLocaleString('ru-RU')} ₽</b>`;
+      }
+
+      const msg =
+        `✅ <b>Клиент принял КП</b>\n\n` +
+        `📄 Номер: <b>${escTg(data.n)}</b>\n` +
+        `👤 Клиент: <b>${escTg(data.c)}</b>${data.co ? ` · ${escTg(data.co)}` : ''}\n` +
+        `✍️ Подписал: <b>${escTg(signerName)}</b>\n` +
+        `💰 Сумма: <b>${totalKzt.toLocaleString('ru-RU')} ₸</b>${rubLine}\n` +
+        `🕐 Время (Алматы): ${almatyTime()}`;
+
+      await telegram.sendMessage(msg);
+    } catch (notifyErr) {
+      console.error('Уведомление не отправлено (принятие всё равно зафиксировано):', notifyErr.message);
     }
 
-    const msg =
-      `✅ <b>Клиент принял КП</b>\n\n` +
-      `📄 Номер: <b>${escTg(data.n)}</b>\n` +
-      `👤 Клиент: <b>${escTg(data.c)}</b>${data.co ? ` · ${escTg(data.co)}` : ''}\n` +
-      `✍️ Подписал: <b>${escTg(signerName)}</b>\n` +
-      `💰 Сумма: <b>${totalKzt.toLocaleString('ru-RU')} ₸</b>${rubLine}\n` +
-      `🕐 Время (Алматы): ${almatyTime()}`;
-
-    await telegram.sendMessage(msg);
     res.json({ ok: true });
   } catch (e) {
     console.error('accept error:', e);
