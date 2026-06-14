@@ -60,18 +60,26 @@ app.post('/api/create', (req, res) => {
 
     if (!clientName) return res.status(400).json({ ok: false, error: 'Клиенттің аты қажет' });
 
-    const services = Array.isArray(b.services) ? b.services
-      .map(s => ({ n: String(s.name || '').trim(), p: Math.max(0, Math.round(Number(s.price) || 0)) }))
-      .filter(s => s.n && s.p > 0) : [];
+    // Стоимость работ (главная сумма)
+    const workKzt = Math.max(0, Math.round(Number(b.workCost) || 0));
+    if (workKzt <= 0) return res.status(400).json({ ok: false, error: 'Жұмыс құны қажет' });
 
-    if (services.length === 0) return res.status(400).json({ ok: false, error: 'Кемінде бір қызмет қажет' });
+    // Дополнительные расходы: название + цена + период
+    const expenses = Array.isArray(b.expenses) ? b.expenses
+      .map(e => ({
+        n: String(e.name || '').trim(),
+        p: Math.max(0, Math.round(Number(e.price) || 0)),
+        pd: String(e.period || '').trim(),
+      }))
+      .filter(e => e.n && e.p > 0) : [];
 
     const now = Date.now();
     const data = {
       n: makeKpNumber(),
       c: clientName,
       co: company,
-      s: services,
+      w: workKzt,     // стоимость работ
+      e: expenses,    // доп. расходы
       sr: showRub,
       ca: now,
       ex: now + validDays * 24 * 60 * 60 * 1000,
@@ -91,14 +99,17 @@ app.get('/kp', async (req, res) => {
     const token = req.query.d;
     const data = payload.decode(token); // бросит ошибку, если подпись неверна
 
-    // Пересчёт в рубли (только если включено)
-    let rate = 0, totalRub = 0;
-    const services = data.s.map(s => ({ name: s.n, priceKzt: s.p, priceRub: 0 }));
-    const totalKzt = services.reduce((sum, s) => sum + s.priceKzt, 0);
+    // Стоимость работ + доп. расходы
+    const workKzt = data.w || 0;
+    const expenses = (data.e || []).map(e => ({ name: e.n, period: e.pd, priceKzt: e.p, priceRub: 0 }));
+    const totalKzt = workKzt + expenses.reduce((sum, e) => sum + e.priceKzt, 0);
 
+    // Пересчёт в рубли (только если включено)
+    let workRub = 0, totalRub = 0;
     if (data.sr && config.showRub) {
-      rate = await currency.getRate();
-      services.forEach(s => { s.priceRub = currency.kztToRub(s.priceKzt, rate); });
+      const rate = await currency.getRate();
+      workRub = currency.kztToRub(workKzt, rate);
+      expenses.forEach(e => { e.priceRub = currency.kztToRub(e.priceKzt, rate); });
       totalRub = currency.kztToRub(totalKzt, rate);
     }
 
@@ -109,7 +120,9 @@ app.get('/kp', async (req, res) => {
       companyLogoText: config.companyLogoText,
       clientName: data.c,
       company: data.co,
-      services,
+      workKzt,
+      workRub,
+      expenses,
       totalKzt,
       totalRub,
       showRub: data.sr && config.showRub,
@@ -148,7 +161,7 @@ app.post('/api/accept', async (req, res) => {
     // любые его ошибки (включая timeout) только логируем — клиент всегда
     // получает {ok:true}, чтобы страница показала «Условия приняты».
     try {
-      const totalKzt = data.s.reduce((sum, s) => sum + s.p, 0);
+      const totalKzt = (data.w || 0) + (data.e || []).reduce((sum, e) => sum + e.p, 0);
       let rubLine = '';
       if (data.sr && config.showRub) {
         const rate = await currency.getRate();
